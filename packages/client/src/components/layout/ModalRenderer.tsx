@@ -50,6 +50,9 @@ const CreatePersonaModal = lazy(() =>
 const CharacterCardUpdateModal = lazy(() =>
   import("../modals/CharacterCardUpdateModal").then((module) => ({ default: module.CharacterCardUpdateModal })),
 );
+const LorebookUpdateModal = lazy(() =>
+  import("../modals/LorebookUpdateModal").then((module) => ({ default: module.LorebookUpdateModal })),
+);
 
 export function ModalRenderer() {
   const modal = useUIStore((s) => s.modal);
@@ -104,6 +107,9 @@ export function ModalRenderer() {
       break;
     case "character-card-update":
       content = <CharacterCardUpdateModal open onClose={closeModal} />;
+      break;
+    case "lorebook-update":
+      content = <LorebookUpdateModal open onClose={closeModal} />;
       break;
     default:
       content = null;

@@ -255,3 +255,86 @@ export async function persistLorebookKeeperUpdates(args: {
 
   return targetLorebookId;
 }
+
+/**
+ * Build enriched diffs for confirm mode — loads existing entries and merges
+ * them with the agent's proposed updates so the client can show before/after.
+ */
+export async function enrichLorebookKeeperForConfirm(args: {
+  lorebooksStore: LorebooksStore;
+  chatId: string;
+  chatName: string | null | undefined;
+  preferredTargetLorebookId: string | null;
+  writableLorebookIds: string[] | null;
+  updates: Array<Record<string, unknown>>;
+}): Promise<{
+  enrichedUpdates: Array<Record<string, unknown>>;
+  meta: {
+    targetLorebookId: string | null;
+    lorebookName: string | null;
+    writableLorebookIds: string[];
+    chatId: string;
+    chatName: string | null;
+  };
+} | null> {
+  const { lorebooksStore, chatId, chatName, preferredTargetLorebookId, writableLorebookIds, updates } = args;
+
+  let targetLorebookId = preferredTargetLorebookId ?? writableLorebookIds?.[0] ?? null;
+  let lorebookName: string | null = null;
+
+  if (targetLorebookId) {
+    try {
+      const lorebook = await lorebooksStore.getById(targetLorebookId);
+      if (lorebook && typeof lorebook === "object" && "name" in lorebook) {
+        lorebookName = String((lorebook as { name?: string | null }).name ?? null) || null;
+      }
+    } catch {
+      // non-critical
+    }
+  }
+
+  // Load existing entries from the target lorebook (if we have one)
+  const existingEntries: Array<{ id: string; name?: string | null; content?: string | null; keys?: unknown; tag?: string | null; locked?: unknown }> = [];
+  if (targetLorebookId) {
+    try {
+      const entries = (await lorebooksStore.listEntries(targetLorebookId)) as unknown as typeof existingEntries;
+      existingEntries.push(...entries);
+    } catch {
+      // non-critical
+    }
+  }
+  const entryByName = new Map(existingEntries.map((entry) => [entry.name?.toLowerCase(), entry]));
+
+  const enrichedUpdates = updates.map((update) => {
+    const rawName = typeof update.entryName === "string" ? update.entryName.trim() : "";
+    const existing = rawName ? entryByName.get(rawName.toLowerCase()) ?? null : null;
+    const locked = !!(existing && (existing.locked === true || existing.locked === "true"));
+
+    return {
+      ...update,
+      action: existing ? "update" : "create",
+      locked,
+      existingEntry: existing
+        ? {
+            id: existing.id,
+            content: typeof existing.content === "string" ? existing.content : "",
+            keys: Array.isArray(existing.keys)
+              ? (existing.keys as unknown[]).filter((k): k is string => typeof k === "string")
+              : [],
+            tag: typeof existing.tag === "string" ? existing.tag : "",
+          }
+        : null,
+    };
+  });
+
+  return {
+    enrichedUpdates,
+    meta: {
+      targetLorebookId,
+      lorebookName,
+      writableLorebookIds: writableLorebookIds ?? [],
+      chatId,
+      chatName: chatName ?? null,
+    },
+  };
+}

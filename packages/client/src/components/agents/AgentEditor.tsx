@@ -33,6 +33,7 @@ import {
   Upload,
   Loader2,
   ImageIcon,
+  ShieldCheck,
 } from "lucide-react";
 import { useDeleteAgent } from "../../hooks/use-agents";
 import { useLorebooks } from "../../hooks/use-lorebooks";
@@ -136,6 +137,7 @@ export function AgentEditor() {
   const [localSourceFileIds, setLocalSourceFileIds] = useState<string[]>([]);
   const [localAutoGenerateAvatars, setLocalAutoGenerateAvatars] = useState(false);
   const [localUseAvatarReferences, setLocalUseAvatarReferences] = useState(false);
+  const [localConfirmBeforeUpdate, setLocalConfirmBeforeUpdate] = useState(false);
   const [spotifyStatus, setSpotifyStatus] = useState<{
     connected: boolean;
     expired: boolean;
@@ -182,6 +184,7 @@ export function AgentEditor() {
       setLocalSourceFileIds(settings.sourceFileIds ?? []);
       setLocalAutoGenerateAvatars(settings.autoGenerateAvatars ?? false);
       setLocalUseAvatarReferences(settings.useAvatarReferences ?? false);
+      setLocalConfirmBeforeUpdate(settings.confirmBeforeUpdate ?? false);
       setLocalPrompt(dbConfig.promptTemplate || "");
     } else if (builtIn) {
       setLocalName(builtIn.name);
@@ -198,6 +201,7 @@ export function AgentEditor() {
       setLocalSourceFileIds([]);
       setLocalAutoGenerateAvatars(false);
       setLocalUseAvatarReferences(false);
+      setLocalConfirmBeforeUpdate(false);
       setLocalPrompt("");
     } else {
       // Brand new custom agent — start empty
@@ -326,6 +330,7 @@ export function AgentEditor() {
         ...(localImageConnectionId ? { imageConnectionId: localImageConnectionId } : {}),
         ...(localAutoGenerateAvatars ? { autoGenerateAvatars: true } : {}),
         ...(localUseAvatarReferences ? { useAvatarReferences: true } : {}),
+        ...(localConfirmBeforeUpdate ? { confirmBeforeUpdate: true } : {}),
       },
     };
 
@@ -368,6 +373,7 @@ export function AgentEditor() {
     localSourceFileIds,
     localAutoGenerateAvatars,
     localUseAvatarReferences,
+    localConfirmBeforeUpdate,
     dbConfig,
     builtIn,
     isKnowledgeRetrievalAgent,
@@ -776,6 +782,37 @@ export function AgentEditor() {
               <p className="mt-1 text-[0.625rem] text-[var(--muted-foreground)]">
                 The agent runs once every N assistant messages instead of every response. Default: 8.
               </p>
+            </FieldGroup>
+          )}
+
+          {/* ── Confirm Before Changes (Lorebook Keeper) ── */}
+          {isLorebookKeeperAgent && (
+            <FieldGroup
+              label="Confirm Before Changes"
+              icon={<ShieldCheck size="0.875rem" className="text-amber-400" />}
+              help="When enabled, proposed lorebook entries are queued for your review instead of being saved automatically. You can approve or reject each change individually."
+            >
+              <button
+                onClick={() => {
+                  setLocalConfirmBeforeUpdate(!localConfirmBeforeUpdate);
+                  markDirty();
+                }}
+                className="flex items-center gap-3 rounded-xl bg-[var(--secondary)] px-4 py-3 ring-1 ring-[var(--border)] transition-all hover:bg-[var(--accent)]"
+              >
+                {localConfirmBeforeUpdate ? (
+                  <ToggleRight size="1.25rem" className="text-emerald-400" />
+                ) : (
+                  <ToggleLeft size="1.25rem" className="text-[var(--muted-foreground)]" />
+                )}
+                <div className="text-left">
+                  <p className="text-sm font-medium">{localConfirmBeforeUpdate ? "Enabled" : "Disabled"}</p>
+                  <p className="text-[0.625rem] text-[var(--muted-foreground)]">
+                    {localConfirmBeforeUpdate
+                      ? "Lorebook changes will require your approval before saving"
+                      : "Lorebook changes are saved automatically after each run"}
+                  </p>
+                </div>
+              </button>
             </FieldGroup>
           )}
 

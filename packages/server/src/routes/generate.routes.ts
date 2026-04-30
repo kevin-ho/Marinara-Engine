@@ -97,6 +97,7 @@ import {
   getLorebookKeeperSettings,
   loadLorebookKeeperExistingEntries,
   persistLorebookKeeperUpdates,
+  enrichLorebookKeeperForConfirm,
   resolveLorebookKeeperTarget,
 } from "./generate/lorebook-keeper-utils.js";
 import { registerDryRunRoute } from "./generate/dry-run-route.js";
@@ -6330,22 +6331,52 @@ export async function generateRoutes(app: FastifyInstance) {
           }
 
           // Lorebook Keeper agent → persist new/updated entries to the database
+          // If "Confirm before changes" is enabled, enrich the SSE result with
+          // existing entry content and skip auto-persist so the client can show
+          // a review modal (same UX as Card Evolution Auditor).
           if (result.success && result.type === "lorebook_update" && result.data && typeof result.data === "object") {
             try {
               const lkData = result.data as Record<string, unknown>;
               const updates = (lkData.updates as any[]) ?? [];
               if (updates.length > 0) {
-                await persistLorebookKeeperUpdates({
-                  lorebooksStore,
-                  chatId: input.chatId,
-                  chatName: chat.name,
-                  preferredTargetLorebookId:
-                    typeof agentContext.memory._lorebookKeeperTargetLorebookId === "string"
-                      ? (agentContext.memory._lorebookKeeperTargetLorebookId as string)
-                      : null,
-                  writableLorebookIds: agentContext.writableLorebookIds,
-                  updates,
-                });
+                const confirmBeforeUpdate = !!(lorebookKeeperAgent?.settings?.confirmBeforeUpdate);
+                if (confirmBeforeUpdate) {
+                  // Confirm mode: enrich the SSE result with existing entries and skip persist
+                  const enriched = await enrichLorebookKeeperForConfirm({
+                    lorebooksStore,
+                    chatId: input.chatId,
+                    chatName: chat.name,
+                    preferredTargetLorebookId:
+                      typeof agentContext.memory._lorebookKeeperTargetLorebookId === "string"
+                        ? (agentContext.memory._lorebookKeeperTargetLorebookId as string)
+                        : null,
+                    writableLorebookIds: agentContext.writableLorebookIds,
+                    updates,
+                  });
+                  if (enriched) {
+                    // Mutate the result data in place so the SSE event carries the enrichment.
+                    // The client checks for _confirmMode === true to trigger the review modal.
+                    result.data = {
+                      ...lkData,
+                      updates: enriched.enrichedUpdates,
+                      _confirmMode: true,
+                      _meta: enriched.meta,
+                    };
+                  }
+                } else {
+                  // Auto mode: persist immediately (original behavior)
+                  await persistLorebookKeeperUpdates({
+                    lorebooksStore,
+                    chatId: input.chatId,
+                    chatName: chat.name,
+                    preferredTargetLorebookId:
+                      typeof agentContext.memory._lorebookKeeperTargetLorebookId === "string"
+                        ? (agentContext.memory._lorebookKeeperTargetLorebookId as string)
+                        : null,
+                    writableLorebookIds: agentContext.writableLorebookIds,
+                    updates,
+                  });
+                }
               }
             } catch {
               // Non-critical

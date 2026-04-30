@@ -27,6 +27,7 @@ import {
   getLorebookKeeperSettings,
   loadLorebookKeeperExistingEntries,
   persistLorebookKeeperUpdates,
+  enrichLorebookKeeperForConfirm,
   resolveLorebookKeeperTarget,
 } from "./lorebook-keeper-utils.js";
 import { sendSseEvent, startSseReply } from "./sse.js";
@@ -457,14 +458,35 @@ async function executeLorebookKeeperRetries(args: {
       const lkData = result.data as Record<string, unknown>;
       const updates = (lkData.updates as Array<Record<string, unknown>>) ?? [];
       if (updates.length > 0) {
-        preferredTargetLorebookId = await persistLorebookKeeperUpdates({
-          lorebooksStore,
-          chatId,
-          chatName,
-          preferredTargetLorebookId,
-          writableLorebookIds: retryContext.writableLorebookIds,
-          updates,
-        });
+        const confirmBeforeUpdate = !!(lorebookKeeperAgent.cfg?.settings?.confirmBeforeUpdate);
+        if (confirmBeforeUpdate) {
+          // Confirm mode: enrich and skip persist — client will handle via modal
+          const enriched = await enrichLorebookKeeperForConfirm({
+            lorebooksStore,
+            chatId,
+            chatName,
+            preferredTargetLorebookId,
+            writableLorebookIds: retryContext.writableLorebookIds,
+            updates,
+          });
+          if (enriched) {
+            result.data = {
+              ...lkData,
+              updates: enriched.enrichedUpdates,
+              _confirmMode: true,
+              _meta: enriched.meta,
+            };
+          }
+        } else {
+          preferredTargetLorebookId = await persistLorebookKeeperUpdates({
+            lorebooksStore,
+            chatId,
+            chatName,
+            preferredTargetLorebookId,
+            writableLorebookIds: retryContext.writableLorebookIds,
+            updates,
+          });
+        }
       }
     }
   }
@@ -598,17 +620,41 @@ async function applyRetryResultEffects(args: {
         const lkData = result.data as Record<string, unknown>;
         const retryUpdates = (lkData.updates as any[]) ?? [];
         if (retryUpdates.length > 0) {
-          await persistLorebookKeeperUpdates({
-            lorebooksStore,
-            chatId,
-            chatName: (chat as any).name,
-            preferredTargetLorebookId:
-              typeof agentContext.memory._lorebookKeeperTargetLorebookId === "string"
-                ? (agentContext.memory._lorebookKeeperTargetLorebookId as string)
-                : null,
-            writableLorebookIds: agentContext.writableLorebookIds,
-            updates: retryUpdates,
-          });
+          const lkAgent = resolvedAgents.find((a) => a.resolved.type === "lorebook-keeper") ?? null;
+          const confirmBeforeUpdate = !!(lkAgent?.cfg?.settings?.confirmBeforeUpdate);
+          if (confirmBeforeUpdate) {
+            const enriched = await enrichLorebookKeeperForConfirm({
+              lorebooksStore,
+              chatId,
+              chatName: (chat as any).name,
+              preferredTargetLorebookId:
+                typeof agentContext.memory._lorebookKeeperTargetLorebookId === "string"
+                  ? (agentContext.memory._lorebookKeeperTargetLorebookId as string)
+                  : null,
+              writableLorebookIds: agentContext.writableLorebookIds,
+              updates: retryUpdates,
+            });
+            if (enriched) {
+              result.data = {
+                ...lkData,
+                updates: enriched.enrichedUpdates,
+                _confirmMode: true,
+                _meta: enriched.meta,
+              };
+            }
+          } else {
+            await persistLorebookKeeperUpdates({
+              lorebooksStore,
+              chatId,
+              chatName: (chat as any).name,
+              preferredTargetLorebookId:
+                typeof agentContext.memory._lorebookKeeperTargetLorebookId === "string"
+                  ? (agentContext.memory._lorebookKeeperTargetLorebookId as string)
+                  : null,
+              writableLorebookIds: agentContext.writableLorebookIds,
+              updates: retryUpdates,
+            });
+          }
         }
       } catch {
         // Non-critical patching failure.

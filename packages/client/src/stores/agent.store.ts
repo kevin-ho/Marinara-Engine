@@ -2,7 +2,7 @@
 // Zustand Store: Agent Slice
 // ──────────────────────────────────────────────
 import { create } from "zustand";
-import type { AgentResult, CharacterCardFieldUpdate } from "@marinara-engine/shared";
+import type { AgentResult, CharacterCardFieldUpdate, PendingLorebookUpdate } from "@marinara-engine/shared";
 
 /**
  * A character_card_update result awaiting user confirmation.
@@ -50,6 +50,7 @@ interface AgentState {
     text: string;
   }>;
   pendingCardUpdates: PendingCardUpdate[];
+  pendingLorebookUpdates: PendingLorebookUpdate[];
 
   // Actions
   setActiveAgents: (agents: string[]) => void;
@@ -71,6 +72,9 @@ interface AgentState {
   enqueuePendingCardUpdate: (entry: PendingCardUpdate) => void;
   dismissPendingCardUpdate: (id: string) => void;
   clearPendingCardUpdates: () => void;
+  enqueuePendingLorebookUpdate: (entry: PendingLorebookUpdate) => void;
+  dismissPendingLorebookUpdate: (id: string) => void;
+  clearPendingLorebookUpdates: () => void;
   reset: () => void;
 }
 
@@ -86,6 +90,7 @@ export const useAgentStore = create<AgentState>((set) => ({
   echoLoadedChatId: null,
   cyoaChoices: [],
   pendingCardUpdates: [],
+  pendingLorebookUpdates: [],
 
   setActiveAgents: (agents) => set({ activeAgents: agents }),
   setProcessing: (processing) => set({ isProcessing: processing }),
@@ -139,6 +144,12 @@ export const useAgentStore = create<AgentState>((set) => ({
     set((s) => ({ pendingCardUpdates: s.pendingCardUpdates.filter((e) => e.id !== id) })),
   clearPendingCardUpdates: () => set({ pendingCardUpdates: [] }),
 
+  enqueuePendingLorebookUpdate: (entry) =>
+    set((s) => ({ pendingLorebookUpdates: [...s.pendingLorebookUpdates, entry].slice(-20) })),
+  dismissPendingLorebookUpdate: (id) =>
+    set((s) => ({ pendingLorebookUpdates: s.pendingLorebookUpdates.filter((e) => e.id !== id) })),
+  clearPendingLorebookUpdates: () => set({ pendingLorebookUpdates: [] }),
+
   reset: () =>
     set({
       activeAgents: [],
@@ -152,5 +163,6 @@ export const useAgentStore = create<AgentState>((set) => ({
       echoLoadedChatId: null,
       cyoaChoices: [],
       pendingCardUpdates: [],
+      pendingLorebookUpdates: [],
     }),
 }));

@@ -359,6 +359,7 @@ export function useGenerate() {
   const setCyoaChoices = useAgentStore((s) => s.setCyoaChoices);
   const clearCyoaChoices = useAgentStore((s) => s.clearCyoaChoices);
   const enqueuePendingCardUpdate = useAgentStore((s) => s.enqueuePendingCardUpdate);
+  const enqueuePendingLorebookUpdate = useAgentStore((s) => s.enqueuePendingLorebookUpdate);
   const setFailedAgentTypes = useAgentStore((s) => s.setFailedAgentTypes);
   const clearFailedAgentTypes = useAgentStore((s) => s.clearFailedAgentTypes);
   const setGameState = useGameStateStore((s) => s.setGameState);
@@ -781,6 +782,29 @@ export function useGenerate() {
                     }
                   })
                   .catch((err) => console.warn("[Agent] Failed to build card update entry:", err));
+              }
+
+              // Lorebook Keeper updates with confirm mode — enqueue for review modal.
+              // When confirmBeforeUpdate is off, the server already persisted; no client action needed.
+              if (
+                result.success &&
+                result.resultType === "lorebook_update" &&
+                result.data &&
+                typeof result.data === "object"
+              ) {
+                const lkData = result.data as Record<string, unknown>;
+                // The server enriches the result with _confirmMode=true when confirm is enabled
+                if (lkData._confirmMode === true && Array.isArray(lkData.updates) && lkData.updates.length > 0) {
+                  const pendingEntry: import("@marinara-engine/shared").PendingLorebookUpdate = {
+                    id: crypto.randomUUID(),
+                    updates: lkData.updates as import("@marinara-engine/shared").LorebookEntryDiff[],
+                    agentName: result.agentName,
+                    meta: lkData._meta as import("@marinara-engine/shared").LorebookKeeperConfirmMeta,
+                    timestamp: Date.now(),
+                  };
+                  enqueuePendingLorebookUpdate(pendingEntry);
+                  useUIStore.getState().openModal("lorebook-update");
+                }
               }
 
               // Apply background change — validate filename exists before applying
@@ -1445,6 +1469,7 @@ export function useGenerate() {
       setCyoaChoices,
       clearCyoaChoices,
       enqueuePendingCardUpdate,
+      enqueuePendingLorebookUpdate,
       clearFailedAgentTypes,
       setFailedAgentTypes,
       setGameState,
@@ -1518,6 +1543,26 @@ export function useGenerate() {
                     }
                   })
                   .catch((err) => console.warn("[Agent] Failed to build card update entry:", err));
+              }
+              // Lorebook Keeper confirm mode — same logic as main generate handler
+              if (
+                result.success &&
+                result.resultType === "lorebook_update" &&
+                result.data &&
+                typeof result.data === "object"
+              ) {
+                const lkData = result.data as Record<string, unknown>;
+                if (lkData._confirmMode === true && Array.isArray(lkData.updates) && lkData.updates.length > 0) {
+                  const pendingEntry: import("@marinara-engine/shared").PendingLorebookUpdate = {
+                    id: crypto.randomUUID(),
+                    updates: lkData.updates as import("@marinara-engine/shared").LorebookEntryDiff[],
+                    agentName: result.agentName,
+                    meta: lkData._meta as import("@marinara-engine/shared").LorebookKeeperConfirmMeta,
+                    timestamp: Date.now(),
+                  };
+                  enqueuePendingLorebookUpdate(pendingEntry);
+                  useUIStore.getState().openModal("lorebook-update");
+                }
               }
               if (result.success && result.data) {
                 const bubble = formatAgentBubble(result.agentType, result.agentName, result.data);
@@ -1680,6 +1725,7 @@ export function useGenerate() {
       addThoughtBubble,
       addEchoMessage,
       enqueuePendingCardUpdate,
+      enqueuePendingLorebookUpdate,
       clearFailedAgentTypes,
       clearThoughtBubbles,
       setFailedAgentTypes,

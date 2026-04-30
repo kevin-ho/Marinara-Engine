@@ -556,6 +556,68 @@ export interface LorebookUpdateResult {
 }
 
 /**
+ * A single proposed lorebook entry change — the agent's raw output
+ * enriched with the existing entry content (for confirm mode).
+ */
+export interface LorebookEntryDiff {
+  /** "create" | "update" */
+  action: "create" | "update";
+  /** Proposed entry name */
+  entryName: string;
+  /** Proposed content (agent's version — may include merged old + new for updates) */
+  content: string;
+  /** Proposed activation keys */
+  keys: string[];
+  /** Category tag */
+  tag: string;
+  /** Agent's reason for the change */
+  reason: string;
+  /** Whether this entry is locked on the server (locked = cannot update) */
+  locked: boolean;
+  /** The existing entry's current state (null for creates) */
+  existingEntry: {
+    id: string;
+    content: string;
+    keys: string[];
+    tag: string;
+  } | null;
+}
+
+/**
+ * Metadata included in the SSE result when confirm mode is on —
+ * needed by the client to call the apply endpoint on approval.
+ */
+export interface LorebookKeeperConfirmMeta {
+  /** Target lorebook ID the server resolved */
+  targetLorebookId: string | null;
+  /** Human-readable lorebook name */
+  lorebookName: string | null;
+  /** All lorebook IDs the agent can write to */
+  writableLorebookIds: string[];
+  /** Chat ID (needed for auto-creating lorebook) */
+  chatId: string;
+  /** Chat name (used when auto-creating a lorebook) */
+  chatName: string | null;
+}
+
+/**
+ * A lorebook_update result awaiting user confirmation.
+ * Queued in the agent store when confirm mode is enabled.
+ */
+export interface PendingLorebookUpdate {
+  /** Client-generated ID, used as key for dismissal. */
+  id: string;
+  /** Individual entry diffs */
+  updates: LorebookEntryDiff[];
+  /** Agent name that produced these updates */
+  agentName: string;
+  /** Metadata needed for the apply endpoint */
+  meta: LorebookKeeperConfirmMeta;
+  /** ms since epoch — used for stable ordering. */
+  timestamp: number;
+}
+
+/**
  * Single proposed edit to a character card field.
  *
  * Unlike LorebookUpdateResult, these edits are NEVER applied automatically —

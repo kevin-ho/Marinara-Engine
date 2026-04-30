@@ -331,4 +331,108 @@ export async function lorebooksRoutes(app: FastifyInstance) {
 
     return { vectorized, total: entries.length };
   });
+
+  // ── Apply Lorebook Keeper agent updates (confirm mode) ──
+  // Called by the client after the user approves proposed lorebook changes
+  // in the review modal. Mirrors persistLorebookKeeperUpdates but accepts
+  // only the user-approved subset.
+  app.post("/apply-agent-updates", async (req, reply) => {
+    const body = req.body as Record<string, unknown> | null;
+    if (!body || typeof body !== "object") {
+      reply.code(400);
+      return { success: false, error: "Request body required" };
+    }
+
+    const meta = body.meta as Record<string, unknown> | null;
+    const updates = Array.isArray(body.updates) ? (body.updates as Array<Record<string, unknown>>) : [];
+
+    if (!updates.length) {
+      return { success: true };
+    }
+
+    try {
+      const lorebooksStore = createLorebooksStorage(app.db);
+
+      let targetLorebookId =
+        typeof meta?.targetLorebookId === "string" && meta.targetLorebookId.trim()
+          ? meta.targetLorebookId.trim()
+          : null;
+
+      // Auto-create lorebook if needed (same logic as persistLorebookKeeperUpdates)
+      const writableLorebookIds = Array.isArray(meta?.writableLorebookIds)
+        ? (meta.writableLorebookIds as string[]).filter((id: unknown): id is string => typeof id === "string")
+        : [];
+
+      if (!targetLorebookId && writableLorebookIds.length > 0) {
+        targetLorebookId = writableLorebookIds[0] ?? null;
+      }
+
+      const chatId = typeof meta?.chatId === "string" ? meta.chatId : "";
+      const chatName = typeof meta?.chatName === "string" ? meta.chatName : null;
+
+      if (!targetLorebookId) {
+        const created = await lorebooksStore.create({
+          name: `Auto-generated (${chatName || chatId})`,
+          description: "Automatically created by the Lorebook Keeper agent",
+          category: "uncategorized",
+          chatId,
+          enabled: true,
+          generatedBy: "agent",
+          sourceAgentId: "lorebook-keeper",
+        });
+        targetLorebookId = (created as { id?: string } | null)?.id ?? null;
+      }
+
+      if (!targetLorebookId) {
+        reply.code(500);
+        return { success: false, error: "Could not resolve or create target lorebook" };
+      }
+
+      // Load existing entries
+      const existingEntries = (await lorebooksStore.listEntries(targetLorebookId)) as unknown as Array<{
+        id: string;
+        name?: string | null;
+        locked?: unknown;
+      }>;
+      const entryByName = new Map(existingEntries.map((entry) => [entry.name?.toLowerCase(), entry]));
+
+      for (const update of updates) {
+        const rawName = typeof update.entryName === "string" ? update.entryName.trim() : "";
+        if (!rawName) continue;
+
+        const content = typeof update.content === "string" ? update.content : "";
+        const keys = Array.isArray(update.keys) ? update.keys.filter((key): key is string => typeof key === "string") : [];
+        const tag = typeof update.tag === "string" ? update.tag : "";
+        const existing = entryByName.get(rawName.toLowerCase());
+
+        if (existing && (existing.locked === true || existing.locked === "true")) {
+          continue;
+        }
+
+        if (existing) {
+          await lorebooksStore.updateEntry(existing.id, { content, keys, tag });
+          entryByName.set(rawName.toLowerCase(), existing);
+          continue;
+        }
+
+        const created = await lorebooksStore.createEntry({
+          lorebookId: targetLorebookId,
+          name: rawName,
+          content,
+          keys,
+          tag,
+          enabled: true,
+        });
+        if (created && typeof created === "object" && "id" in created) {
+          entryByName.set(rawName.toLowerCase(), created as { id: string; name?: string | null; locked?: unknown });
+        }
+      }
+
+      return { success: true };
+    } catch (err) {
+      app.log.error("[Lorebook] apply-agent-updates failed: %s", err instanceof Error ? err.message : err);
+      reply.code(500);
+      return { success: false, error: "Failed to apply lorebook updates" };
+    }
+  });
 }
